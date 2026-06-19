@@ -111,23 +111,35 @@ jobs:
             ./gradlew assembleRelease --no-daemon 2>&1 | tail -80
             find . -name "*.apk" | head -1 | xargs -I{} cp {} $GITHUB_WORKSPACE/output.apk
           elif [ -n "$NODE_DIR" ]; then
-            echo ">>> Node.js/React project: $NODE_DIR"
+            echo ">>> Node.js project: $NODE_DIR"
             cd "$NODE_DIR"
-            npm install --legacy-peer-deps 2>&1 | tail -10 || true
+            IS_FRONTEND=$(node -e "try{const p=require('./package.json');const all=Object.keys({...p.dependencies||{},...p.devDependencies||{}});const fe=['react','vue','vite','next','nuxt','svelte','@angular/core','gatsby','remix'];console.log(fe.some(f=>all.includes(f))?'yes':'no')}catch(e){console.log('no')}")
+            echo "Frontend project: $IS_FRONTEND"
+            echo "Installing dependencies..."
+            npm install --legacy-peer-deps 2>&1 | tail -15 || true
             HAS_BUILD=$(node -e "try{const p=require('./package.json');console.log(p.scripts&&p.scripts.build?'yes':'no')}catch(e){console.log('no')}")
             if [ "$HAS_BUILD" = "yes" ]; then
               echo "Running npm run build..."
-              npm run build 2>&1 | tail -40 || true
+              NODE_OPTIONS="--max-old-space-size=4096" npm run build 2>&1 | tail -60 || true
+            fi
+            if [ -f "next.config.js" ] || [ -f "next.config.ts" ] || [ -f "next.config.mjs" ]; then
+              npm run export 2>/dev/null | tail -20 || true
             fi
             STATIC=""
-            for d in build dist out .next/out public www; do
+            for d in build dist out .next/out public www static _site .output/public dist/public; do
               if [ -d "$d" ] && [ -f "$d/index.html" ]; then STATIC="$d"; break; fi
             done
             [ -z "$STATIC" ] && [ -f "index.html" ] && STATIC="."
             if [ -z "$STATIC" ]; then
-              echo "##[error]ZIP ini adalah projek backend Node.js (tiada HTML output)."
-              echo "##[error]Untuk buat APK dari website, gunakan MODE URL bukan ZIP."
-              echo "##[error]ZIP mode hanya untuk: Flutter, Android Studio, atau React/HTML app."
+              if [ "$IS_FRONTEND" = "yes" ]; then
+                echo "##[error]Projek React/Vue/Vite/Next.js gagal build atau output folder tidak dijumpai."
+                echo "##[error]Pastikan 'npm run build' berfungsi dan hasilkan folder: build/, dist/, atau out/"
+                echo "##[error]Semak package.json scripts.build anda."
+              else
+                echo "##[error]ZIP ini adalah projek backend Node.js (tiada HTML output)."
+                echo "##[error]Untuk buat APK dari website, gunakan MODE URL bukan ZIP."
+                echo "##[error]ZIP mode hanya untuk: Flutter, Android Studio, React/Vue/Vite, atau HTML."
+              fi
               exit 1
             fi
             echo ">>> Wrapping static web ($STATIC) sebagai WebView APK..."
