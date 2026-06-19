@@ -114,27 +114,42 @@ jobs:
             echo ">>> Node.js project: $NODE_DIR"
             cd "$NODE_DIR"
             IS_FRONTEND=$(node -e "try{const p=require('./package.json');const all=Object.keys({...p.dependencies||{},...p.devDependencies||{}});const fe=['react','vue','vite','next','nuxt','svelte','@angular/core','gatsby','remix'];console.log(fe.some(f=>all.includes(f))?'yes':'no')}catch(e){console.log('no')}")
-            echo "Frontend project: $IS_FRONTEND"
+            IS_VUE=$([ -f "vue.config.js" ] || [ -f "vue.config.ts" ] && echo "yes" || echo "no")
+            IS_VITE=$([ -f "vite.config.js" ] || [ -f "vite.config.ts" ] || [ -f "vite.config.mjs" ] && echo "yes" || echo "no")
+            IS_NEXT=$([ -f "next.config.js" ] || [ -f "next.config.ts" ] || [ -f "next.config.mjs" ] && echo "yes" || echo "no")
+            echo "Frontend: $IS_FRONTEND | Vue: $IS_VUE | Vite: $IS_VITE | Next: $IS_NEXT"
             echo "Installing dependencies..."
             npm install --legacy-peer-deps 2>&1 | tail -15 || true
             HAS_BUILD=$(node -e "try{const p=require('./package.json');console.log(p.scripts&&p.scripts.build?'yes':'no')}catch(e){console.log('no')}")
+            BUILD_OK="no"
             if [ "$HAS_BUILD" = "yes" ]; then
-              echo "Running npm run build..."
-              NODE_OPTIONS="--max-old-space-size=4096" npm run build 2>&1 | tail -60 || true
+              echo ">>> Running npm run build..."
+              NODE_OPTIONS="--max-old-space-size=4096" npm run build 2>&1 | tail -60
+              BUILD_EXIT=$?
+              [ "$BUILD_EXIT" = "0" ] && BUILD_OK="yes" || echo "npm run build exited with $BUILD_EXIT, trying fallbacks..."
             fi
-            if [ -f "next.config.js" ] || [ -f "next.config.ts" ] || [ -f "next.config.mjs" ]; then
-              npm run export 2>/dev/null | tail -20 || true
+            if [ "$BUILD_OK" = "no" ] && [ "$IS_VUE" = "yes" ]; then
+              echo ">>> Vue fallback: npx @vue/cli-service build..."
+              NODE_OPTIONS="--max-old-space-size=4096" npx --yes @vue/cli-service build 2>&1 | tail -40 || true
+            fi
+            if [ "$BUILD_OK" = "no" ] && [ "$IS_VITE" = "yes" ]; then
+              echo ">>> Vite fallback: npx vite build..."
+              NODE_OPTIONS="--max-old-space-size=4096" npx --yes vite build 2>&1 | tail -40 || true
+            fi
+            if [ "$IS_NEXT" = "yes" ]; then
+              echo ">>> Next.js: trying export..."
+              npm run export 2>/dev/null | tail -20 || npx --yes next export 2>/dev/null | tail -20 || true
             fi
             STATIC=""
-            for d in build dist out .next/out public www static _site .output/public dist/public; do
+            for d in build dist out .next/out public www static _site .output/public dist/public web; do
               if [ -d "$d" ] && [ -f "$d/index.html" ]; then STATIC="$d"; break; fi
             done
             [ -z "$STATIC" ] && [ -f "index.html" ] && STATIC="."
             if [ -z "$STATIC" ]; then
-              if [ "$IS_FRONTEND" = "yes" ]; then
+              if [ "$IS_FRONTEND" = "yes" ] || [ "$IS_VUE" = "yes" ] || [ "$IS_VITE" = "yes" ]; then
                 echo "##[error]Projek React/Vue/Vite/Next.js gagal build atau output folder tidak dijumpai."
-                echo "##[error]Pastikan 'npm run build' berfungsi dan hasilkan folder: build/, dist/, atau out/"
-                echo "##[error]Semak package.json scripts.build anda."
+                echo "##[error]Pastikan 'npm run build' berfungsi dan output ada dalam: build/, dist/, atau out/"
+                echo "##[error]Semak package.json → scripts.build anda."
               else
                 echo "##[error]ZIP ini adalah projek backend Node.js (tiada HTML output)."
                 echo "##[error]Untuk buat APK dari website, gunakan MODE URL bukan ZIP."
