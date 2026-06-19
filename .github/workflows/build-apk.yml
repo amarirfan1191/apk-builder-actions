@@ -1,0 +1,28 @@
+name: Build APK
+on:
+  repository_dispatch:
+    types: [build-apk]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Accept licenses
+        run: yes | sdkmanager --licenses || true
+      - name: Build placeholder
+        run: echo build_type=${{ github.event.client_payload.build_type }}
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-output
+          path: output.apk
+          if-no-files-found: ignore
+          retention-days: 1
