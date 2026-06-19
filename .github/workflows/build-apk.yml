@@ -2,40 +2,197 @@ name: Build APK
 on:
   workflow_dispatch:
     inputs:
-      url:
-        description: 'Website URL'
+      build_type:
+        description: 'url or zip'
         required: true
+        default: 'url'
+      url:
+        description: 'Website URL (for url build)'
+        required: false
       app_name:
         description: 'App Name'
-        required: true
-      chat_id:
-        description: 'Telegram Chat ID'
         required: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
         with:
-          node-version: '20'
+          java-version: '17'
+          distribution: 'temurin'
 
-      - name: Install Bubblewrap
-        run: npm install -g @bubblewrap/cli
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Initialize Bubblewrap project
+      - name: Accept licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Install build tools
+        run: sdkmanager "build-tools;34.0.0" "platforms;android-34" || true
+
+      # ── URL Build: create WebView project ──────────────────────────────────
+      - name: Create WebView project
+        if: github.event.inputs.build_type == 'url'
         run: |
-          mkdir apk-project && cd apk-project
-          bubblewrap init --manifest "${{ github.event.inputs.url }}/manifest.json" || true
+          mkdir -p webview-app/app/src/main/java/com/webview/app
+          mkdir -p webview-app/app/src/main/res/layout
+          mkdir -p webview-app/app/src/main/res/values
+          mkdir -p webview-app/gradle/wrapper
 
-      - name: Build WebView APK using gradle
-        run: |
-          # Fallback: Build simple WebView APK using Android SDK
-          sudo apt-get install -y android-sdk wget unzip
-          echo "Build triggered for ${{ github.event.inputs.url }}" > build.log
+          APP_URL="${{ github.event.inputs.url }}"
+          APP_NAME="${{ github.event.inputs.app_name }}"
+          PKG="com.webview.$(echo "${APP_NAME}" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')"
 
-      - name: Notify Telegram - Done
+          cat > webview-app/settings.gradle << 'EOF'
+          rootProject.name = "WebViewApp"
+          include ':app'
+          EOF
+
+          cat > webview-app/build.gradle << 'EOF'
+          buildscript {
+              repositories { google(); mavenCentral() }
+              dependencies { classpath 'com.android.tools.build:gradle:8.2.0' }
+          }
+          allprojects { repositories { google(); mavenCentral() } }
+          EOF
+
+          cat > webview-app/gradle.properties << 'EOF'
+          android.useAndroidX=true
+          EOF
+
+          cat > webview-app/gradle/wrapper/gradle-wrapper.properties << 'EOF'
+          distributionUrl=https\://services.gradle.org/distributions/gradle-8.2-bin.zip
+          EOF
+
+          cat > webview-app/app/build.gradle << EOF
+          plugins { id 'com.android.application' }
+          android {
+            namespace "${PKG}"
+            compileSdk 34
+            defaultConfig {
+              applicationId "${PKG}"
+              minSdk 21
+              targetSdk 34
+              versionCode 1
+              versionName "1.0"
+            }
+            buildTypes {
+              release {
+                minifyEnabled false
+                signingConfig signingConfigs.debug
+              }
+            }
+          }
+          dependencies {
+            implementation 'androidx.appcompat:appcompat:1.6.1'
+          }
+          EOF
+
+          cat > webview-app/app/src/main/AndroidManifest.xml << EOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+            <uses-permission android:name="android.permission.INTERNET"/>
+            <application android:allowBackup="true" android:label="${APP_NAME}" android:theme="@style/Theme.AppCompat.NoActionBar">
+              <activity android:name=".MainActivity" android:exported="true">
+                <intent-filter>
+                  <action android:name="android.intent.action.MAIN"/>
+                  <category android:name="android.intent.category.LAUNCHER"/>
+                </intent-filter>
+              </activity>
+            </application>
+          </manifest>
+          EOF
+
+          cat > webview-app/app/src/main/java/com/webview/app/MainActivity.java << EOF
+          package com.webview.app;
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          public class MainActivity extends Activity {
+            @Override protected void onCreate(Bundle b) {
+              super.onCreate(b);
+              WebView wv = new WebView(this);
+              wv.setWebViewClient(new WebViewClient());
+              WebSettings s = wv.getSettings();
+              s.setJavaScriptEnabled(true);
+              s.setDomStorageEnabled(true);
+              wv.loadUrl("${APP_URL}");
+              setContentView(wv);
+            }
+          }
+          EOF
+
+          cat > webview-app/app/src/main/res/layout/activity_main.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent"/>
+          EOF
+
+          cat > webview-app/app/src/main/res/values/strings.xml << EOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources><string name="app_name">${APP_NAME}</string></resources>
+          EOF
+
+      - name: Build URL APK
+        if: github.event.inputs.build_type == 'url'
+        working-directory: webview-app
         run: |
-          MSG="✅ Build selesai untuk *${{ github.event.inputs.app_name }}*!%0A%0A🌐 URL: ${{ github.event.inputs.url }}%0A%0A📦 APK WebView boleh dibuat melalui link ini:%0Ahttps://webintoapp.com/create?url=${{ github.event.inputs.url }}"
-          curl -s "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage?chat_id=${{ github.event.inputs.chat_id }}&text=${MSG}&parse_mode=Markdown"
+          chmod +x gradlew 2>/dev/null || gradle wrapper
+          ./gradlew assembleRelease --no-daemon 2>&1 | tail -30
+
+      # ── ZIP Build: extract and build Flutter/Android ───────────────────────
+      - name: Extract ZIP project
+        if: github.event.inputs.build_type == 'zip'
+        run: |
+          if [ -f "upload.zip" ]; then
+            unzip upload.zip -d zip-project
+            echo "ZIP extracted"
+          else
+            echo "ERROR: upload.zip not found"
+            exit 1
+          fi
+
+      - name: Detect and build ZIP project
+        if: github.event.inputs.build_type == 'zip'
+        run: |
+          cd zip-project
+          # Find the actual project root (handle nested folders)
+          PROJECT_DIR=$(find . -name "build.gradle" -o -name "pubspec.yaml" | head -1 | xargs dirname)
+          cd "$PROJECT_DIR"
+          if [ -f "pubspec.yaml" ]; then
+            echo "Flutter project detected"
+            sudo snap install flutter --classic || true
+            flutter pub get
+            flutter build apk --release
+            cp build/app/outputs/flutter-apk/app-release.apk /tmp/output.apk
+          elif [ -f "build.gradle" ] || [ -f "build.gradle.kts" ]; then
+            echo "Android/Gradle project detected"
+            chmod +x gradlew 2>/dev/null || true
+            ./gradlew assembleRelease --no-daemon 2>&1 | tail -30
+            find . -name "*.apk" | head -1 | xargs -I{} cp {} /tmp/output.apk
+          else
+            echo "Unknown project type"
+            exit 1
+          fi
+
+      - name: Collect APK
+        run: |
+          if [ "${{ github.event.inputs.build_type }}" = "url" ]; then
+            find webview-app -name "*.apk" | head -1 | xargs -I{} cp {} output.apk 2>/dev/null || true
+          else
+            cp /tmp/output.apk output.apk 2>/dev/null || true
+          fi
+          ls -lh output.apk 2>/dev/null || echo "No APK found"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-output
+          path: output.apk
+          retention-days: 1
+          if-no-files-found: warn
