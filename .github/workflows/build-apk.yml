@@ -158,9 +158,18 @@ jobs:
             fi
             if [ -z "$STATIC" ]; then
               if [ "$IS_FRONTEND" = "yes" ] || [ "$IS_VUE" = "yes" ] || [ "$IS_VITE" = "yes" ]; then
-                echo "##[error]Projek React/Vue/Vite/Next.js gagal build atau output folder tidak dijumpai."
-                echo "##[error]Pastikan 'npm run build' berfungsi dan output ada dalam: build/, dist/, atau out/"
-                echo "##[error]Semak package.json → scripts.build anda."
+                echo "##[error]BUILD FAILED — output folder (build/dist/out) tidak dijumpai."
+                if [ -f "/tmp/build_out.log" ]; then
+                  BUILD_ERRORS=$(grep -i "error" /tmp/build_out.log | grep -v "^npm warn" | grep -v "node_modules" | tail -8)
+                  if [ -n "$BUILD_ERRORS" ]; then
+                    echo "##[error]--- Ralat semasa build ---"
+                    echo "$BUILD_ERRORS" | while IFS= read -r line; do echo "##[error]$line"; done
+                  else
+                    LAST_LINES=$(tail -8 /tmp/build_out.log)
+                    echo "##[error]--- Output terakhir ---"
+                    echo "$LAST_LINES" | while IFS= read -r line; do echo "##[error]$line"; done
+                  fi
+                fi
               else
                 echo "##[error]ZIP ini adalah projek backend Node.js (tiada HTML output)."
                 echo "##[error]Untuk buat APK dari website, gunakan MODE URL bukan ZIP."
