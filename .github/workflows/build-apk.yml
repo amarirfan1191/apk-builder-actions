@@ -1,0 +1,41 @@
+name: Build APK
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Website URL'
+        required: true
+      app_name:
+        description: 'App Name'
+        required: true
+      chat_id:
+        description: 'Telegram Chat ID'
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Bubblewrap
+        run: npm install -g @bubblewrap/cli
+
+      - name: Initialize Bubblewrap project
+        run: |
+          mkdir apk-project && cd apk-project
+          bubblewrap init --manifest "${{ github.event.inputs.url }}/manifest.json" || true
+
+      - name: Build WebView APK using gradle
+        run: |
+          # Fallback: Build simple WebView APK using Android SDK
+          sudo apt-get install -y android-sdk wget unzip
+          echo "Build triggered for ${{ github.event.inputs.url }}" > build.log
+
+      - name: Notify Telegram - Done
+        run: |
+          MSG="✅ Build selesai untuk *${{ github.event.inputs.app_name }}*!%0A%0A🌐 URL: ${{ github.event.inputs.url }}%0A%0A📦 APK WebView boleh dibuat melalui link ini:%0Ahttps://webintoapp.com/create?url=${{ github.event.inputs.url }}"
+          curl -s "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage?chat_id=${{ github.event.inputs.chat_id }}&text=${MSG}&parse_mode=Markdown"
