@@ -5,11 +5,25 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      BUILD_TYPE: ${{ github.event.client_payload.build_type }}
+      APP_NAME: ${{ github.event.client_payload.app_name }}
+      APP_URL: ${{ github.event.client_payload.url }}
     steps:
       - uses: actions/checkout@v4
-      - name: Placeholder
-        run: echo ok > output.apk
-      - uses: actions/upload-artifact@v4
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Accept licenses
+        run: yes | sdkmanager --licenses || true; sdkmanager 'build-tools;34.0.0' 'platforms;android-34' || true
+      - name: Build APK
+        run: chmod +x build.sh && ./build.sh
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
           name: apk-output
           path: output.apk
