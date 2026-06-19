@@ -33,7 +33,6 @@ jobs:
           yes | sdkmanager --licenses || true
           sdkmanager "build-tools;34.0.0" "platforms;android-34" || true
 
-      # ── URL: Create WebView project ─────────────────────────────────────────
       - name: Create WebView project
         if: github.event.inputs.build_type == 'url'
         run: |
@@ -41,14 +40,13 @@ jobs:
           APP_NAME="${{ github.event.inputs.app_name }}"
           PKG="com.apkbot.$(echo "${APP_NAME}" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | head -c20)"
           mkdir -p webview-app/app/src/main/java/com/apkbot/app
-          mkdir -p webview-app/app/src/main/res/{layout,values,drawable}
+          mkdir -p webview-app/app/src/main/res/{layout,values}
           mkdir -p webview-app/gradle/wrapper
 
           cat > webview-app/settings.gradle << 'EOF'
 rootProject.name = "WebViewApp"
 include ':app'
 EOF
-
           cat > webview-app/build.gradle << 'EOF'
 buildscript {
     repositories { google(); mavenCentral() }
@@ -56,16 +54,13 @@ buildscript {
 }
 allprojects { repositories { google(); mavenCentral() } }
 EOF
-
           cat > webview-app/gradle.properties << 'EOF'
 android.useAndroidX=true
 org.gradle.daemon=false
 EOF
-
           cat > webview-app/gradle/wrapper/gradle-wrapper.properties << 'EOF'
 distributionUrl=https\://services.gradle.org/distributions/gradle-8.4-bin.zip
 EOF
-
           cat > webview-app/app/build.gradle << EOF
 plugins { id 'com.android.application' }
 android {
@@ -73,37 +68,20 @@ android {
   compileSdk 34
   defaultConfig {
     applicationId "${PKG}"
-    minSdk 21
-    targetSdk 34
-    versionCode 1
-    versionName "1.0"
+    minSdk 21; targetSdk 34
+    versionCode 1; versionName "1.0"
   }
-  buildTypes {
-    release {
-      minifyEnabled false
-      signingConfig signingConfigs.debug
-    }
-  }
-  compileOptions {
-    sourceCompatibility JavaVersion.VERSION_17
-    targetCompatibility JavaVersion.VERSION_17
-  }
+  buildTypes { release { minifyEnabled false; signingConfig signingConfigs.debug } }
+  compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
 }
-dependencies {
-  implementation 'androidx.appcompat:appcompat:1.6.1'
-}
+dependencies { implementation 'androidx.appcompat:appcompat:1.6.1' }
 EOF
-
           cat > webview-app/app/src/main/AndroidManifest.xml << EOF
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
   <uses-permission android:name="android.permission.INTERNET"/>
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
-  <application
-    android:allowBackup="true"
-    android:label="${APP_NAME}"
-    android:usesCleartextTraffic="true"
-    android:theme="@style/Theme.AppCompat.NoActionBar">
+  <application android:allowBackup="true" android:label="${APP_NAME}" android:usesCleartextTraffic="true" android:theme="@style/Theme.AppCompat.NoActionBar">
     <activity android:name=".MainActivity" android:exported="true" android:configChanges="orientation|screenSize">
       <intent-filter>
         <action android:name="android.intent.action.MAIN"/>
@@ -113,40 +91,30 @@ EOF
   </application>
 </manifest>
 EOF
-
           cat > webview-app/app/src/main/java/com/apkbot/app/MainActivity.java << EOF
 package com.apkbot.app;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.os.Bundle;
-import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 public class MainActivity extends Activity {
-  private WebView webView;
+  private WebView wv;
   @SuppressLint("SetJavaScriptEnabled")
   @Override protected void onCreate(Bundle b) {
     super.onCreate(b);
-    webView = new WebView(this);
-    WebSettings s = webView.getSettings();
-    s.setJavaScriptEnabled(true);
-    s.setDomStorageEnabled(true);
-    s.setLoadWithOverviewMode(true);
-    s.setUseWideViewPort(true);
-    s.setCacheMode(WebSettings.LOAD_DEFAULT);
-    webView.setWebViewClient(new WebViewClient() {
-      @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) { return false; }
-    });
-    webView.loadUrl("${APP_URL}");
-    setContentView(webView);
+    wv = new WebView(this);
+    WebSettings s = wv.getSettings();
+    s.setJavaScriptEnabled(true); s.setDomStorageEnabled(true);
+    s.setLoadWithOverviewMode(true); s.setUseWideViewPort(true);
+    wv.setWebViewClient(new WebViewClient());
+    wv.loadUrl("${APP_URL}");
+    setContentView(wv);
   }
-  @Override public void onBackPressed() {
-    if (webView.canGoBack()) webView.goBack(); else super.onBackPressed();
-  }
+  @Override public void onBackPressed() { if (wv.canGoBack()) wv.goBack(); else super.onBackPressed(); }
 }
 EOF
-
           cat > webview-app/app/src/main/res/values/strings.xml << EOF
 <?xml version="1.0" encoding="utf-8"?>
 <resources><string name="app_name">${APP_NAME}</string></resources>
@@ -156,48 +124,42 @@ EOF
         if: github.event.inputs.build_type == 'url'
         working-directory: webview-app
         run: |
-          gradle wrapper
-          chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tail -50
+          gradle wrapper && chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon 2>&1 | tail -50
           find . -name "*.apk" -exec cp {} ../output.apk \;
 
-      # ── ZIP: Extract & detect project type ─────────────────────────────────
       - name: Extract ZIP
         if: github.event.inputs.build_type == 'zip'
         run: |
           [ -f "upload.zip" ] || (echo "upload.zip missing!" && exit 1)
           unzip -o upload.zip -d zip-project
 
-      - name: Build ZIP project (Flutter)
+      - name: Build ZIP project
         if: github.event.inputs.build_type == 'zip'
         run: |
-          PROJECT_DIR=$(find zip-project -name "pubspec.yaml" | head -1 | xargs dirname || echo "")
-          if [ -n "$PROJECT_DIR" ]; then
-            echo "Flutter project at $PROJECT_DIR"
+          FLUTTER_DIR=$(find zip-project -name "pubspec.yaml" | head -1 | xargs dirname 2>/dev/null || echo "")
+          GRADLE_DIR=$(find zip-project -name "gradlew" | head -1 | xargs dirname 2>/dev/null || echo "")
+          if [ -n "$FLUTTER_DIR" ]; then
+            echo "Flutter: $FLUTTER_DIR"
             sudo snap install flutter --classic 2>/dev/null || true
             export PATH="$HOME/snap/flutter/common/flutter/bin:$PATH"
-            cd "$PROJECT_DIR"
-            flutter pub get
-            flutter build apk --release --no-tree-shake-icons
+            cd "$FLUTTER_DIR"
+            flutter pub get && flutter build apk --release --no-tree-shake-icons
+            find . -name "*.apk" | head -1 | xargs -I{} cp {} $GITHUB_WORKSPACE/output.apk
+          elif [ -n "$GRADLE_DIR" ]; then
+            echo "Gradle: $GRADLE_DIR"
+            cd "$GRADLE_DIR" && chmod +x gradlew
+            ./gradlew assembleRelease --no-daemon 2>&1 | tail -50
             find . -name "*.apk" | head -1 | xargs -I{} cp {} $GITHUB_WORKSPACE/output.apk
           else
-            GRADLE_DIR=$(find zip-project -name "build.gradle" | head -1 | xargs dirname || echo "")
-            if [ -n "$GRADLE_DIR" ]; then
-              echo "Gradle project at $GRADLE_DIR"
-              cd "$GRADLE_DIR"
-              chmod +x gradlew 2>/dev/null || gradle wrapper
-              ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tail -50
-              find . -name "*.apk" | head -1 | xargs -I{} cp {} $GITHUB_WORKSPACE/output.apk
-            else
-              echo "Unknown project type!" && exit 1
-            fi
+            echo "Unknown project!" && exit 1
           fi
 
-      - name: Verify APK
+      - name: Verify & Upload APK
         run: |
-          ls -lh output.apk 2>/dev/null && echo "APK ready!" || (echo "Build failed - no APK" && exit 1)
+          ls -lh output.apk || (echo "No APK produced!" && exit 1)
 
-      - name: Upload APK
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: apk-output
