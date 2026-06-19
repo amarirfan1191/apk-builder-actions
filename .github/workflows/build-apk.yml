@@ -124,27 +124,38 @@ jobs:
             BUILD_OK="no"
             if [ "$HAS_BUILD" = "yes" ]; then
               echo ">>> Running npm run build..."
-              NODE_OPTIONS="--max-old-space-size=4096" npm run build 2>&1 | tail -60
-              BUILD_EXIT=$?
-              [ "$BUILD_EXIT" = "0" ] && BUILD_OK="yes" || echo "npm run build exited with $BUILD_EXIT, trying fallbacks..."
+              NODE_OPTIONS="--max-old-space-size=4096" npm run build 2>&1 | tee /tmp/build_out.log | tail -60
+              BUILD_EXIT=${PIPESTATUS[0]}
+              echo "Build exit code: $BUILD_EXIT"
+              [ "$BUILD_EXIT" = "0" ] && BUILD_OK="yes" || echo "npm run build exited $BUILD_EXIT, trying fallbacks..."
+              cat /tmp/build_out.log | grep -i "error|warn|fail" | tail -10 || true
             fi
             if [ "$BUILD_OK" = "no" ] && [ "$IS_VUE" = "yes" ]; then
               echo ">>> Vue fallback: npx @vue/cli-service build..."
               NODE_OPTIONS="--max-old-space-size=4096" npx --yes @vue/cli-service build 2>&1 | tail -40 || true
+              BUILD_OK="maybe"
             fi
             if [ "$BUILD_OK" = "no" ] && [ "$IS_VITE" = "yes" ]; then
               echo ">>> Vite fallback: npx vite build..."
               NODE_OPTIONS="--max-old-space-size=4096" npx --yes vite build 2>&1 | tail -40 || true
+              BUILD_OK="maybe"
             fi
             if [ "$IS_NEXT" = "yes" ]; then
               echo ">>> Next.js: trying export..."
               npm run export 2>/dev/null | tail -20 || npx --yes next export 2>/dev/null | tail -20 || true
             fi
+            echo "=== Locating output index.html ==="
+            find . -name "index.html" ! -path "*/node_modules/*" ! -path "./src/*" ! -path "./public/src/*" 2>/dev/null | head -20
             STATIC=""
-            for d in build dist out .next/out public www static _site .output/public dist/public web; do
+            for d in build dist out .next/out www static _site .output/public dist/public web; do
               if [ -d "$d" ] && [ -f "$d/index.html" ]; then STATIC="$d"; break; fi
             done
-            [ -z "$STATIC" ] && [ -f "index.html" ] && STATIC="."
+            if [ -z "$STATIC" ] && [ -f "public/index.html" ]; then STATIC="public"; fi
+            if [ -z "$STATIC" ] && [ -f "index.html" ]; then STATIC="."; fi
+            if [ -z "$STATIC" ]; then
+              FOUND=$(find . -name "index.html" ! -path "*/node_modules/*" ! -path "./src/*" ! -path "./public/src/*" 2>/dev/null | head -1)
+              [ -n "$FOUND" ] && STATIC=$(dirname "$FOUND")
+            fi
             if [ -z "$STATIC" ]; then
               if [ "$IS_FRONTEND" = "yes" ] || [ "$IS_VUE" = "yes" ] || [ "$IS_VITE" = "yes" ]; then
                 echo "##[error]Projek React/Vue/Vite/Next.js gagal build atau output folder tidak dijumpai."
