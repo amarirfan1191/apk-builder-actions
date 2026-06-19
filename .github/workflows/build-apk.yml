@@ -83,22 +83,36 @@ jobs:
       - name: Build ZIP project
         if: github.event.inputs.build_type == 'zip'
         run: |
+          echo "=== ZIP contents ==="
+          find zip-project -maxdepth 4 | head -60
+          echo "===================="
           FLUTTER_DIR=$(find zip-project -name "pubspec.yaml" | head -1 | xargs dirname 2>/dev/null || echo "")
-          GRADLE_DIR=$(find zip-project -name "gradlew" | head -1 | xargs dirname 2>/dev/null || echo "")
+          GRADLE_WRAP=$(find zip-project -name "gradlew" | head -1 | xargs dirname 2>/dev/null || echo "")
+          GRADLE_BUILD=$(find zip-project \( -name "settings.gradle" -o -name "settings.gradle.kts" \) | head -1 | xargs dirname 2>/dev/null || echo "")
           if [ -n "$FLUTTER_DIR" ]; then
-            echo "Flutter: $FLUTTER_DIR"
+            echo ">>> Flutter project: $FLUTTER_DIR"
             sudo snap install flutter --classic 2>/dev/null || true
             export PATH="$HOME/snap/flutter/common/flutter/bin:$PATH"
+            flutter --version
             cd "$FLUTTER_DIR"
             flutter pub get && flutter build apk --release --no-tree-shake-icons
             find . -name "*.apk" | head -1 | xargs -I{} cp {} $GITHUB_WORKSPACE/output.apk
-          elif [ -n "$GRADLE_DIR" ]; then
-            echo "Gradle: $GRADLE_DIR"
-            cd "$GRADLE_DIR" && chmod +x gradlew
-            ./gradlew assembleRelease --no-daemon 2>&1 | tail -50
+          elif [ -n "$GRADLE_WRAP" ]; then
+            echo ">>> Android project (with wrapper): $GRADLE_WRAP"
+            cd "$GRADLE_WRAP" && chmod +x gradlew
+            ./gradlew assembleRelease --no-daemon 2>&1 | tail -80
+            find . -name "*.apk" | head -1 | xargs -I{} cp {} $GITHUB_WORKSPACE/output.apk
+          elif [ -n "$GRADLE_BUILD" ]; then
+            echo ">>> Android project (no wrapper, generating): $GRADLE_BUILD"
+            cd "$GRADLE_BUILD"
+            gradle wrapper --gradle-version 8.4
+            chmod +x gradlew
+            ./gradlew assembleRelease --no-daemon 2>&1 | tail -80
             find . -name "*.apk" | head -1 | xargs -I{} cp {} $GITHUB_WORKSPACE/output.apk
           else
-            echo "Unknown project!" && exit 1
+            echo "Struktur ZIP tidak dikenali. Fail yang ditemui:"
+            find zip-project -type f | head -30
+            exit 1
           fi
 
       - name: Verify & Upload APK
