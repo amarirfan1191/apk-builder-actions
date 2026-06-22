@@ -16,6 +16,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      APP_URL: ${{ github.event.inputs.url }}
+      APP_NAME: ${{ github.event.inputs.app_name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -36,89 +39,27 @@ jobs:
       - name: Create WebView project
         if: github.event.inputs.build_type == 'url'
         run: |
-          APP_URL="${{ github.event.inputs.url }}"
-          APP_NAME="${{ github.event.inputs.app_name }}"
-          PKG="com.apkbot.$(echo "${APP_NAME}" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | head -c20)"
-          mkdir -p webview-app/app/src/main/java/com/apkbot/app
-          mkdir -p webview-app/app/src/main/res/{layout,values}
-          mkdir -p webview-app/gradle/wrapper
-
-          cat > webview-app/settings.gradle << 'EOF'
-rootProject.name = "WebViewApp"
-include ':app'
-EOF
-          cat > webview-app/build.gradle << 'EOF'
-buildscript {
-    repositories { google(); mavenCentral() }
-    dependencies { classpath 'com.android.tools.build:gradle:8.2.2' }
-}
-allprojects { repositories { google(); mavenCentral() } }
-EOF
-          cat > webview-app/gradle.properties << 'EOF'
-android.useAndroidX=true
-org.gradle.daemon=false
-EOF
-          cat > webview-app/gradle/wrapper/gradle-wrapper.properties << 'EOF'
-distributionUrl=https\://services.gradle.org/distributions/gradle-8.4-bin.zip
-EOF
-          cat > webview-app/app/build.gradle << EOF
-plugins { id 'com.android.application' }
-android {
-  namespace "${PKG}"
-  compileSdk 34
-  defaultConfig {
-    applicationId "${PKG}"
-    minSdk 21; targetSdk 34
-    versionCode 1; versionName "1.0"
-  }
-  buildTypes { release { minifyEnabled false; signingConfig signingConfigs.debug } }
-  compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
-}
-dependencies { implementation 'androidx.appcompat:appcompat:1.6.1' }
-EOF
-          cat > webview-app/app/src/main/AndroidManifest.xml << EOF
-<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-  <uses-permission android:name="android.permission.INTERNET"/>
-  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
-  <application android:allowBackup="true" android:label="${APP_NAME}" android:usesCleartextTraffic="true" android:theme="@style/Theme.AppCompat.NoActionBar">
-    <activity android:name=".MainActivity" android:exported="true" android:configChanges="orientation|screenSize">
-      <intent-filter>
-        <action android:name="android.intent.action.MAIN"/>
-        <category android:name="android.intent.category.LAUNCHER"/>
-      </intent-filter>
-    </activity>
-  </application>
-</manifest>
-EOF
-          cat > webview-app/app/src/main/java/com/apkbot/app/MainActivity.java << EOF
-package com.apkbot.app;
-import android.annotation.SuppressLint;
-import android.app.Activity;
-import android.os.Bundle;
-import android.webkit.WebSettings;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
-public class MainActivity extends Activity {
-  private WebView wv;
-  @SuppressLint("SetJavaScriptEnabled")
-  @Override protected void onCreate(Bundle b) {
-    super.onCreate(b);
-    wv = new WebView(this);
-    WebSettings s = wv.getSettings();
-    s.setJavaScriptEnabled(true); s.setDomStorageEnabled(true);
-    s.setLoadWithOverviewMode(true); s.setUseWideViewPort(true);
-    wv.setWebViewClient(new WebViewClient());
-    wv.loadUrl("${APP_URL}");
-    setContentView(wv);
-  }
-  @Override public void onBackPressed() { if (wv.canGoBack()) wv.goBack(); else super.onBackPressed(); }
-}
-EOF
-          cat > webview-app/app/src/main/res/values/strings.xml << EOF
-<?xml version="1.0" encoding="utf-8"?>
-<resources><string name="app_name">${APP_NAME}</string></resources>
-EOF
+          node -e "
+            var fs=require('fs');
+            var url=process.env.APP_URL||'';
+            var name=process.env.APP_NAME||'App';
+            var pkg='com.apkbot.'+name.toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,20);
+            fs.mkdirSync('webview-app/app/src/main/java/com/apkbot/app',{recursive:true});
+            fs.mkdirSync('webview-app/app/src/main/res/values',{recursive:true});
+            fs.mkdirSync('webview-app/gradle/wrapper',{recursive:true});
+            fs.writeFileSync('webview-app/settings.gradle','rootProject.name = \x22WebViewApp\x22\ninclude \x22:app\x22\n');
+            fs.writeFileSync('webview-app/build.gradle','buildscript {\n  repositories { google(); mavenCentral() }\n  dependencies { classpath \x22com.android.tools.build:gradle:8.2.2\x22 }\n}\nallprojects { repositories { google(); mavenCentral() } }\n');
+            fs.writeFileSync('webview-app/gradle.properties','android.useAndroidX=true\norg.gradle.daemon=false\n');
+            fs.writeFileSync('webview-app/gradle/wrapper/gradle-wrapper.properties','distributionUrl=https\\\\://services.gradle.org/distributions/gradle-8.4-bin.zip\n');
+            var appBg='plugins { id \x22com.android.application\x22 }\nandroid {\n  namespace \x22'+pkg+'\x22\n  compileSdk 34\n  defaultConfig {\n    applicationId \x22'+pkg+'\x22\n    minSdk 21; targetSdk 34\n    versionCode 1; versionName \x221.0\x22\n  }\n  buildTypes { release { minifyEnabled false; signingConfig signingConfigs.debug } }\n  compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }\n}\ndependencies { implementation \x22androidx.appcompat:appcompat:1.6.1\x22 }\n';
+            fs.writeFileSync('webview-app/app/build.gradle',appBg);
+            var mf='<?xml version=\x221.0\x22 encoding=\x22utf-8\x22?>\n<manifest xmlns:android=\x22http://schemas.android.com/apk/res/android\x22>\n  <uses-permission android:name=\x22android.permission.INTERNET\x22/>\n  <uses-permission android:name=\x22android.permission.ACCESS_NETWORK_STATE\x22/>\n  <application android:allowBackup=\x22true\x22 android:label=\x22'+name+'\x22 android:usesCleartextTraffic=\x22true\x22 android:theme=\x22@style/Theme.AppCompat.NoActionBar\x22>\n    <activity android:name=\x22.MainActivity\x22 android:exported=\x22true\x22 android:configChanges=\x22orientation|screenSize\x22>\n      <intent-filter>\n        <action android:name=\x22android.intent.action.MAIN\x22/>\n        <category android:name=\x22android.intent.category.LAUNCHER\x22/>\n      </intent-filter>\n    </activity>\n  </application>\n</manifest>\n';
+            fs.writeFileSync('webview-app/app/src/main/AndroidManifest.xml',mf);
+            var java='package com.apkbot.app;\nimport android.annotation.SuppressLint;\nimport android.app.Activity;\nimport android.os.Bundle;\nimport android.webkit.WebSettings;\nimport android.webkit.WebView;\nimport android.webkit.WebViewClient;\npublic class MainActivity extends Activity {\n  private WebView wv;\n  @SuppressLint(\x22SetJavaScriptEnabled\x22)\n  @Override protected void onCreate(Bundle b) {\n    super.onCreate(b);\n    wv = new WebView(this);\n    WebSettings s = wv.getSettings();\n    s.setJavaScriptEnabled(true); s.setDomStorageEnabled(true);\n    s.setLoadWithOverviewMode(true); s.setUseWideViewPort(true);\n    wv.setWebViewClient(new WebViewClient());\n    wv.loadUrl(\x22'+url+'\x22);\n    setContentView(wv);\n  }\n  @Override public void onBackPressed() { if (wv.canGoBack()) wv.goBack(); else super.onBackPressed(); }\n}\n';
+            fs.writeFileSync('webview-app/app/src/main/java/com/apkbot/app/MainActivity.java',java);
+            fs.writeFileSync('webview-app/app/src/main/res/values/strings.xml','<?xml version=\x221.0\x22 encoding=\x22utf-8\x22?>\n<resources><string name=\x22app_name\x22>'+name+'</string></resources>\n');
+            console.log('Project created: '+name+' ('+pkg+')');
+          "
 
       - name: Build URL APK
         if: github.event.inputs.build_type == 'url'
