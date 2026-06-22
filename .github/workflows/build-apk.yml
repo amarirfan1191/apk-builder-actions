@@ -44,19 +44,19 @@ jobs:
             var url=process.env.APP_URL||'';
             var name=process.env.APP_NAME||'App';
             var pkg='com.apkbot.'+name.toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,20);
-            fs.mkdirSync('webview-app/app/src/main/java/com/apkbot/app',{recursive:true});
+            fs.mkdirSync('webview-app/app/src/main/java/'+pkg.split('.').join('/')+'/',{recursive:true});
             fs.mkdirSync('webview-app/app/src/main/res/values',{recursive:true});
             fs.mkdirSync('webview-app/gradle/wrapper',{recursive:true});
             fs.writeFileSync('webview-app/settings.gradle','rootProject.name = \x22WebViewApp\x22\ninclude \x22:app\x22\n');
             fs.writeFileSync('webview-app/build.gradle','buildscript {\n  repositories { google(); mavenCentral() }\n  dependencies { classpath \x22com.android.tools.build:gradle:8.2.2\x22 }\n}\nallprojects { repositories { google(); mavenCentral() } }\n');
             fs.writeFileSync('webview-app/gradle.properties','android.useAndroidX=true\norg.gradle.daemon=false\n');
             fs.writeFileSync('webview-app/gradle/wrapper/gradle-wrapper.properties','distributionUrl=https\\\\://services.gradle.org/distributions/gradle-8.4-bin.zip\n');
-            var appBg='plugins { id \x22com.android.application\x22 }\nandroid {\n  namespace \x22'+pkg+'\x22\n  compileSdk 34\n  defaultConfig {\n    applicationId \x22'+pkg+'\x22\n    minSdk 21; targetSdk 34\n    versionCode 1; versionName \x221.0\x22\n  }\n  buildTypes { release { minifyEnabled false; signingConfig signingConfigs.debug } }\n  compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }\n}\ndependencies { implementation \x22androidx.appcompat:appcompat:1.6.1\x22 }\n';
+            var appBg='apply plugin: \x27com.android.application\x27\nandroid {\n  namespace \x22'+pkg+'\x22\n  compileSdk 34\n  defaultConfig {\n    applicationId \x22'+pkg+'\x22\n    minSdk 21; targetSdk 34\n    versionCode 1; versionName \x221.0\x22\n  }\n  buildTypes { release { minifyEnabled false; signingConfig signingConfigs.debug } }\n  compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }\n}\ndependencies { implementation \x22androidx.appcompat:appcompat:1.6.1\x22 }\n';
             fs.writeFileSync('webview-app/app/build.gradle',appBg);
             var mf='<?xml version=\x221.0\x22 encoding=\x22utf-8\x22?>\n<manifest xmlns:android=\x22http://schemas.android.com/apk/res/android\x22>\n  <uses-permission android:name=\x22android.permission.INTERNET\x22/>\n  <uses-permission android:name=\x22android.permission.ACCESS_NETWORK_STATE\x22/>\n  <application android:allowBackup=\x22true\x22 android:label=\x22'+name+'\x22 android:usesCleartextTraffic=\x22true\x22 android:theme=\x22@style/Theme.AppCompat.NoActionBar\x22>\n    <activity android:name=\x22.MainActivity\x22 android:exported=\x22true\x22 android:configChanges=\x22orientation|screenSize\x22>\n      <intent-filter>\n        <action android:name=\x22android.intent.action.MAIN\x22/>\n        <category android:name=\x22android.intent.category.LAUNCHER\x22/>\n      </intent-filter>\n    </activity>\n  </application>\n</manifest>\n';
             fs.writeFileSync('webview-app/app/src/main/AndroidManifest.xml',mf);
-            var java='package com.apkbot.app;\nimport android.annotation.SuppressLint;\nimport android.app.Activity;\nimport android.os.Bundle;\nimport android.webkit.WebSettings;\nimport android.webkit.WebView;\nimport android.webkit.WebViewClient;\npublic class MainActivity extends Activity {\n  private WebView wv;\n  @SuppressLint(\x22SetJavaScriptEnabled\x22)\n  @Override protected void onCreate(Bundle b) {\n    super.onCreate(b);\n    wv = new WebView(this);\n    WebSettings s = wv.getSettings();\n    s.setJavaScriptEnabled(true); s.setDomStorageEnabled(true);\n    s.setLoadWithOverviewMode(true); s.setUseWideViewPort(true);\n    wv.setWebViewClient(new WebViewClient());\n    wv.loadUrl(\x22'+url+'\x22);\n    setContentView(wv);\n  }\n  @Override public void onBackPressed() { if (wv.canGoBack()) wv.goBack(); else super.onBackPressed(); }\n}\n';
-            fs.writeFileSync('webview-app/app/src/main/java/com/apkbot/app/MainActivity.java',java);
+            var java='package '+pkg+';\nimport android.annotation.SuppressLint;\nimport android.app.Activity;\nimport android.os.Bundle;\nimport android.webkit.WebSettings;\nimport android.webkit.WebView;\nimport android.webkit.WebViewClient;\npublic class MainActivity extends Activity {\n  private WebView wv;\n  @SuppressLint(\x22SetJavaScriptEnabled\x22)\n  @Override protected void onCreate(Bundle b) {\n    super.onCreate(b);\n    wv = new WebView(this);\n    WebSettings s = wv.getSettings();\n    s.setJavaScriptEnabled(true); s.setDomStorageEnabled(true);\n    s.setLoadWithOverviewMode(true); s.setUseWideViewPort(true);\n    wv.setWebViewClient(new WebViewClient());\n    wv.loadUrl(\x22'+url+'\x22);\n    setContentView(wv);\n  }\n  @Override public void onBackPressed() { if (wv.canGoBack()) wv.goBack(); else super.onBackPressed(); }\n}\n';
+            fs.writeFileSync('webview-app/app/src/main/java/'+pkg.split('.').join('/')+'/MainActivity.java',java);
             fs.writeFileSync('webview-app/app/src/main/res/values/strings.xml','<?xml version=\x221.0\x22 encoding=\x22utf-8\x22?>\n<resources><string name=\x22app_name\x22>'+name+'</string></resources>\n');
             console.log('Project created: '+name+' ('+pkg+')');
           "
@@ -65,9 +65,13 @@ jobs:
         if: github.event.inputs.build_type == 'url'
         working-directory: webview-app
         run: |
-          gradle wrapper && chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon 2>&1 | tail -50
-          find . -name "*.apk" -exec cp {} ../output.apk \;
+          set -o pipefail
+          gradle wrapper --gradle-version 8.4 && chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee /tmp/gradle-build.log | tail -80
+          APK=$(find . -name "*.apk" | head -1)
+          [ -n "$APK" ] || (echo "APK not found after build!" && cat /tmp/gradle-build.log && exit 1)
+          cp "$APK" ../output.apk
+          echo "APK copied: $APK"
 
       - name: Extract ZIP
         if: github.event.inputs.build_type == 'zip'
@@ -90,8 +94,11 @@ jobs:
           elif [ -n "$GRADLE_DIR" ]; then
             echo "Gradle: $GRADLE_DIR"
             cd "$GRADLE_DIR" && chmod +x gradlew
-            ./gradlew assembleRelease --no-daemon 2>&1 | tail -50
-            find . -name "*.apk" | head -1 | xargs -I{} cp {} $GITHUB_WORKSPACE/output.apk
+            set -o pipefail
+            ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee /tmp/gradle-build.log | tail -80
+            APK=$(find . -name "*.apk" | head -1)
+            [ -n "$APK" ] || (echo "APK not found!" && cat /tmp/gradle-build.log && exit 1)
+            cp "$APK" $GITHUB_WORKSPACE/output.apk
           else
             echo "Unknown project!" && exit 1
           fi
