@@ -16,9 +16,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      APP_URL: ${{ github.event.inputs.url }}
-      APP_NAME: ${{ github.event.inputs.app_name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -39,60 +36,97 @@ jobs:
       - name: Create WebView project
         if: github.event.inputs.build_type == 'url'
         run: |
-          node -e "
-            var fs=require('fs');
-            var url=process.env.APP_URL||'';
-            var name=process.env.APP_NAME||'App';
-            var pkg='com.apkbot.'+name.toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,20);
-            fs.mkdirSync('webview-app/app/src/main/java/'+pkg.split('.').join('/')+'/',{recursive:true});
-            fs.mkdirSync('webview-app/app/src/main/res/values',{recursive:true});
-            fs.mkdirSync('webview-app/gradle/wrapper',{recursive:true});
-            fs.writeFileSync('webview-app/settings.gradle','rootProject.name = \x22WebViewApp\x22\ninclude \x22:app\x22\n');
-            fs.writeFileSync('webview-app/build.gradle','buildscript {\n  repositories { google(); mavenCentral() }\n  dependencies { classpath \x22com.android.tools.build:gradle:8.2.2\x22 }\n}\nallprojects { repositories { google(); mavenCentral() } }\n');
-            fs.writeFileSync('webview-app/gradle.properties','android.useAndroidX=true\norg.gradle.daemon=false\n');
-            fs.writeFileSync('webview-app/gradle/wrapper/gradle-wrapper.properties','distributionUrl=https\\\\://services.gradle.org/distributions/gradle-8.4-bin.zip\n');
-            var appBg='apply plugin: \x27com.android.application\x27\nandroid {\n  namespace \x22'+pkg+'\x22\n  compileSdk 34\n  defaultConfig {\n    applicationId \x22'+pkg+'\x22\n    minSdk 21; targetSdk 34\n    versionCode 1; versionName \x221.0\x22\n  }\n  buildTypes { release { minifyEnabled false; signingConfig signingConfigs.debug } }\n  compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }\n}\ndependencies { implementation \x22androidx.appcompat:appcompat:1.6.1\x22 }\n';
-            fs.writeFileSync('webview-app/app/build.gradle',appBg);
-            var mf='<?xml version=\x221.0\x22 encoding=\x22utf-8\x22?>\n<manifest xmlns:android=\x22http://schemas.android.com/apk/res/android\x22>\n  <uses-permission android:name=\x22android.permission.INTERNET\x22/>\n  <uses-permission android:name=\x22android.permission.ACCESS_NETWORK_STATE\x22/>\n  <application android:allowBackup=\x22true\x22 android:label=\x22'+name+'\x22 android:icon=\x22@mipmap/ic_launcher\x22 android:usesCleartextTraffic=\x22true\x22 android:theme=\x22@style/Theme.AppCompat.NoActionBar\x22>\n    <activity android:name=\x22.MainActivity\x22 android:exported=\x22true\x22 android:configChanges=\x22orientation|screenSize\x22>\n      <intent-filter>\n        <action android:name=\x22android.intent.action.MAIN\x22/>\n        <category android:name=\x22android.intent.category.LAUNCHER\x22/>\n      </intent-filter>\n    </activity>\n  </application>\n</manifest>\n';
-            fs.writeFileSync('webview-app/app/src/main/AndroidManifest.xml',mf);
-            var java='package '+pkg+';\nimport android.annotation.SuppressLint;\nimport android.app.Activity;\nimport android.os.Bundle;\nimport android.webkit.WebSettings;\nimport android.webkit.WebView;\nimport android.webkit.WebViewClient;\npublic class MainActivity extends Activity {\n  private WebView wv;\n  @SuppressLint(\x22SetJavaScriptEnabled\x22)\n  @Override protected void onCreate(Bundle b) {\n    super.onCreate(b);\n    wv = new WebView(this);\n    WebSettings s = wv.getSettings();\n    s.setJavaScriptEnabled(true); s.setDomStorageEnabled(true);\n    s.setLoadWithOverviewMode(true); s.setUseWideViewPort(true);\n    wv.setWebViewClient(new WebViewClient());\n    wv.loadUrl(\x22'+url+'\x22);\n    setContentView(wv);\n  }\n  @Override public void onBackPressed() { if (wv.canGoBack()) wv.goBack(); else super.onBackPressed(); }\n}\n';
-            fs.writeFileSync('webview-app/app/src/main/java/'+pkg.split('.').join('/')+'/MainActivity.java',java);
-            fs.writeFileSync('webview-app/app/src/main/res/values/strings.xml','<?xml version=\x221.0\x22 encoding=\x22utf-8\x22?>\n<resources><string name=\x22app_name\x22>'+name+'</string></resources>\n');
-            console.log('Project created: '+name+' ('+pkg+')');
-          "
+          APP_URL="${{ github.event.inputs.url }}"
+          APP_NAME="${{ github.event.inputs.app_name }}"
+          PKG="com.apkbot.$(echo "${APP_NAME}" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | head -c20)"
+          mkdir -p webview-app/app/src/main/java/com/apkbot/app
+          mkdir -p webview-app/app/src/main/res/{layout,values}
+          mkdir -p webview-app/gradle/wrapper
 
-      - name: Apply custom icon
-        if: github.event.inputs.build_type == 'url'
-        run: |
-          if [ -f "app-icon.png" ]; then
-            echo "🖼 Custom icon ditemui, sedang proses..."
-            sudo apt-get install -y imagemagick -qq 2>/dev/null || true
-            mkdir -p webview-app/app/src/main/res/mipmap-mdpi
-            mkdir -p webview-app/app/src/main/res/mipmap-hdpi
-            mkdir -p webview-app/app/src/main/res/mipmap-xhdpi
-            mkdir -p webview-app/app/src/main/res/mipmap-xxhdpi
-            mkdir -p webview-app/app/src/main/res/mipmap-xxxhdpi
-            convert app-icon.png -resize 48x48! webview-app/app/src/main/res/mipmap-mdpi/ic_launcher.png
-            convert app-icon.png -resize 72x72! webview-app/app/src/main/res/mipmap-hdpi/ic_launcher.png
-            convert app-icon.png -resize 96x96! webview-app/app/src/main/res/mipmap-xhdpi/ic_launcher.png
-            convert app-icon.png -resize 144x144! webview-app/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
-            convert app-icon.png -resize 192x192! webview-app/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-            echo "✅ Icon berjaya dipasang!"
-          else
-            echo "ℹ️ Tiada custom icon, guna icon default Android"
-          fi
+          cat > webview-app/settings.gradle << 'EOF'
+rootProject.name = "WebViewApp"
+include ':app'
+EOF
+          cat > webview-app/build.gradle << 'EOF'
+buildscript {
+    repositories { google(); mavenCentral() }
+    dependencies { classpath 'com.android.tools.build:gradle:8.2.2' }
+}
+allprojects { repositories { google(); mavenCentral() } }
+EOF
+          cat > webview-app/gradle.properties << 'EOF'
+android.useAndroidX=true
+org.gradle.daemon=false
+EOF
+          cat > webview-app/gradle/wrapper/gradle-wrapper.properties << 'EOF'
+distributionUrl=https\://services.gradle.org/distributions/gradle-8.4-bin.zip
+EOF
+          cat > webview-app/app/build.gradle << EOF
+plugins { id 'com.android.application' }
+android {
+  namespace "${PKG}"
+  compileSdk 34
+  defaultConfig {
+    applicationId "${PKG}"
+    minSdk 21; targetSdk 34
+    versionCode 1; versionName "1.0"
+  }
+  buildTypes { release { minifyEnabled false; signingConfig signingConfigs.debug } }
+  compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
+dependencies { implementation 'androidx.appcompat:appcompat:1.6.1' }
+EOF
+          cat > webview-app/app/src/main/AndroidManifest.xml << EOF
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-permission android:name="android.permission.INTERNET"/>
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+  <application android:allowBackup="true" android:label="${APP_NAME}" android:usesCleartextTraffic="true" android:theme="@style/Theme.AppCompat.NoActionBar">
+    <activity android:name=".MainActivity" android:exported="true" android:configChanges="orientation|screenSize">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN"/>
+        <category android:name="android.intent.category.LAUNCHER"/>
+      </intent-filter>
+    </activity>
+  </application>
+</manifest>
+EOF
+          cat > webview-app/app/src/main/java/com/apkbot/app/MainActivity.java << EOF
+package com.apkbot.app;
+import android.annotation.SuppressLint;
+import android.app.Activity;
+import android.os.Bundle;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+public class MainActivity extends Activity {
+  private WebView wv;
+  @SuppressLint("SetJavaScriptEnabled")
+  @Override protected void onCreate(Bundle b) {
+    super.onCreate(b);
+    wv = new WebView(this);
+    WebSettings s = wv.getSettings();
+    s.setJavaScriptEnabled(true); s.setDomStorageEnabled(true);
+    s.setLoadWithOverviewMode(true); s.setUseWideViewPort(true);
+    wv.setWebViewClient(new WebViewClient());
+    wv.loadUrl("${APP_URL}");
+    setContentView(wv);
+  }
+  @Override public void onBackPressed() { if (wv.canGoBack()) wv.goBack(); else super.onBackPressed(); }
+}
+EOF
+          cat > webview-app/app/src/main/res/values/strings.xml << EOF
+<?xml version="1.0" encoding="utf-8"?>
+<resources><string name="app_name">${APP_NAME}</string></resources>
+EOF
 
       - name: Build URL APK
         if: github.event.inputs.build_type == 'url'
         working-directory: webview-app
         run: |
-          set -o pipefail
-          gradle wrapper --gradle-version 8.4 && chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee /tmp/gradle-build.log | tail -80
-          APK=$(find . -name "*.apk" | head -1)
-          [ -n "$APK" ] || (echo "APK not found after build!" && cat /tmp/gradle-build.log && exit 1)
-          cp "$APK" ../output.apk
-          echo "APK copied: $APK"
+          gradle wrapper && chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon 2>&1 | tail -50
+          find . -name "*.apk" -exec cp {} ../output.apk \;
 
       - name: Extract ZIP
         if: github.event.inputs.build_type == 'zip'
@@ -103,42 +137,22 @@ jobs:
       - name: Build ZIP project
         if: github.event.inputs.build_type == 'zip'
         run: |
-          echo "=== Kandungan ZIP ==="
-          find zip-project -maxdepth 4 | head -40
-          echo "====================="
-          FLUTTER_DIR=$(find zip-project -name "pubspec.yaml" | head -1 | xargs -I{} dirname {} 2>/dev/null || echo "")
-          GRADLE_DIR=$(find zip-project -name "gradlew" | head -1 | xargs -I{} dirname {} 2>/dev/null || echo "")
-          GRADLE_NO_WRAP=$(find zip-project -name "settings.gradle" -o -name "settings.gradle.kts" | head -1 | xargs -I{} dirname {} 2>/dev/null || echo "")
-          set -o pipefail
+          FLUTTER_DIR=$(find zip-project -name "pubspec.yaml" | head -1 | xargs dirname 2>/dev/null || echo "")
+          GRADLE_DIR=$(find zip-project -name "gradlew" | head -1 | xargs dirname 2>/dev/null || echo "")
           if [ -n "$FLUTTER_DIR" ]; then
-            echo "✅ Projek Flutter: $FLUTTER_DIR"
+            echo "Flutter: $FLUTTER_DIR"
+            sudo snap install flutter --classic 2>/dev/null || true
+            export PATH="$HOME/snap/flutter/common/flutter/bin:$PATH"
             cd "$FLUTTER_DIR"
-            wget -q https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.24.5-stable.tar.xz -O /tmp/flutter.tar.xz
-            tar -xf /tmp/flutter.tar.xz -C /opt/
-            export PATH="/opt/flutter/bin:$PATH"
             flutter pub get && flutter build apk --release --no-tree-shake-icons
-            APK=$(find . -name "*.apk" | head -1)
-            [ -n "$APK" ] || (echo "APK Flutter tidak dijumpai!" && exit 1)
-            cp "$APK" $GITHUB_WORKSPACE/output.apk
+            find . -name "*.apk" | head -1 | xargs -I{} cp {} $GITHUB_WORKSPACE/output.apk
           elif [ -n "$GRADLE_DIR" ]; then
-            echo "✅ Projek Android (dengan gradlew): $GRADLE_DIR"
+            echo "Gradle: $GRADLE_DIR"
             cd "$GRADLE_DIR" && chmod +x gradlew
-            ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee /tmp/gradle-build.log | tail -80
-            APK=$(find . -name "*.apk" | head -1)
-            [ -n "$APK" ] || (echo "APK tidak dijumpai!" && cat /tmp/gradle-build.log && exit 1)
-            cp "$APK" $GITHUB_WORKSPACE/output.apk
-          elif [ -n "$GRADLE_NO_WRAP" ]; then
-            echo "✅ Projek Android (tanpa gradlew): $GRADLE_NO_WRAP"
-            cd "$GRADLE_NO_WRAP"
-            gradle wrapper --gradle-version 8.4 && chmod +x gradlew
-            ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee /tmp/gradle-build.log | tail -80
-            APK=$(find . -name "*.apk" | head -1)
-            [ -n "$APK" ] || (echo "APK tidak dijumpai!" && cat /tmp/gradle-build.log && exit 1)
-            cp "$APK" $GITHUB_WORKSPACE/output.apk
+            ./gradlew assembleRelease --no-daemon 2>&1 | tail -50
+            find . -name "*.apk" | head -1 | xargs -I{} cp {} $GITHUB_WORKSPACE/output.apk
           else
-            echo "❌ Format ZIP tidak disokong!"
-            echo "ZIP mestilah mengandungi projek Flutter (pubspec.yaml) atau Android (settings.gradle / gradlew)"
-            exit 1
+            echo "Unknown project!" && exit 1
           fi
 
       - name: Verify & Upload APK
